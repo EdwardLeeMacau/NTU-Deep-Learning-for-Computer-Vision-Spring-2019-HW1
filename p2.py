@@ -3,53 +3,122 @@
   PackageName  [ DLCV_HW1 ]
   Synopsis     [ Problem 2 Solution of the HW1 ]
 
-  Problem 1:
-  - read the grey images
+  Problem 2:
+  - read the grey images (With RGB mode)
   - PCA, plot the mean and first 4 eigenvector
+  - Reconstruct the human face by the lower dimension vector
+  - Using the k-NN strategy to classify the face.
 """
 
 import numpy as np
 import sklearn
 import cv2
 import os
-# from matplotlib import pyplot
+import utils
+# import glob
 
-imageNames = os.listdir("p2_data/")
-X_Train = np.array([])
-Y_Train = np.array([])
-X_Test  = np.array([])
-Y_Test  = np.array([])
+from sklearn.decomposition import PCA 
+from sklearn.neighbors import KNeighborsClassifier
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 
-def readImages():
-    for name in imageNames:
-        directory   = "p2_data/{}".format(name)
-        
-        buffer = np.empty((1, 56, 46))
-        for name in imageNames: 
-            buffer = np.append(buffer, cv2.imread(directory), axis=0)
+verbose = False
+draw_graph = False
 
-        X_Train = np.append(X_Train, buffer[:6], axis=0)
-        X_Test  = np.append(X_Test, buffer[6:], axis=0)
-        
-    return X_Train, Y_Train, X_Test, Y_Test
+def pcaPattern(X_Train, mean_X_Train, n, index):
+    pca = PCA(n_components=n, copy=True, whiten=False)
+    newX_Train = pca.fit_transform(X_Train)
 
-def showImageSet():
-    for dataset in [X_Train, Y_Train, X_Test, Y_Test]:
-        print("Shape: {}".format(dataset.shape()))
+    reconstruct_X = (np.dot(newX_Train, pca.components_) + mean_X_Train).astype(int)
+    plt.subplot(2, 2, index)
+    imgplot = plt.imshow(reconstruct_X[0].reshape(56, 46, 3))
+
+    mse = sklearn.metrics.mean_squared_error(X_Train[0], reconstruct_X[0])
+    return newX_Train, mse, pca
+
+def kNNPattern(X_Train, X_Test, Y_Train, Y_Test, k):
+    neigh = KNeighborsClassifier(n_neighbors=k)
+    neigh.fit(X_Train, Y_Train)
+
+    trainScore = neigh.score(X_Train, Y_Train)
+    testScore  = neigh.score(X_Test, Y_Test)
+
+    return trainScore, testScore
 
 def main():
-    X_Train, X_Test, Y_Train, Y_Test = readImages()
-    showImageSet()
+    # Training sets setting
+    X_Train = []
+    X_Test  = []
+    Y_Train = []
+    Y_Test  = []
 
-    # PCA
-    # pca = sklearn.decomposition.PCA(n_components=3)
-    # pca.fit(X_Train)
-    # pca.transform(X_Train)
-    # pca.transform(X_Test)
-    # print(pca.explained_variance_ratio_)
-    # print(pca.singular_values_)
+    # Read images
+    imagesName = os.listdir("p2_data")
+    images = {}
+    for i in range(1, 41):  images[i] = {}
+    
+    for name in imagesName:
+        personNumber = int(name[: name.index("_")])
+        personCounter = int(name[name.index("_") + 1 : name.index(".")])
+        
+        image = cv2.imread(os.path.join("p2_data", name))
+        images[personNumber][personCounter] = image
 
-    # Plot with matplotlib photo
+    for person in range(1, 41):
+        for counter in range(1, 11):
+            if (counter < 7):
+                X_Train.append(images[person][counter].reshape(-1))
+                Y_Train.append(person)
+            else:
+                X_Test.append(images[person][counter].reshape(-1))
+                Y_Test.append(person)
+    
+    # Solved as numpy element
+    X_Train = np.array(X_Train)
+    X_Test  = np.array(X_Test)
+    Y_Train = np.array(Y_Train)
+    Y_Test  = np.array(Y_Test)
+    
+    if verbose:
+        print("The shape of X_Train: {}".format(X_Train.shape))
+        print("The shape of X_Test:  {}".format(X_Test.shape))
+        print("The shape of Y_Train: {}".format(Y_Train.shape))
+        print("The shape of Y_Test:  {}".format(Y_Test.shape))
+
+    # Mean face
+    mean_X_Train = np.mean(X_Train, axis=0)
+    
+    if draw_graph:
+        imgplot = plt.imshow(mean_X_Train.astype(int).reshape(56, 46, 3))
+        plt.show()
+
+    # for counter, N in enumerate([3, 45, 140, 229], 1)
+    newX_Train_1, mse_1, pca_1 = pcaPattern(X_Train, mean_X_Train, 3, 1)
+    newX_Train_2, mse_2, pca_2 = pcaPattern(X_Train, mean_X_Train, 45, 2)
+    newX_Train_3, mse_3, pca_3 = pcaPattern(X_Train, mean_X_Train, 140, 3)
+    newX_Train_4, mse_4, pca_4 = pcaPattern(X_Train, mean_X_Train, 229, 4)
+
+    # plot first 4 pca components
+    for counter, vector in enumerate(pca_4.components_[0:4], 1):
+        plt.subplot(2, 2, counter)
+        vector = (vector - min(vector)) / (max(vector) - min(vector)) * 255               
+        plt.imshow(vector.reshape(56, 46, 3).astype(int))
+    
+    if draw_graph:
+        plt.show()
+
+    # Choosing parameter: k and N
+    for k in [1, 3, 5]:
+        for N, X_Train in enumerate([newX_Train_1, newX_Train_2, newX_Train_3], 1):
+            if N == 1:
+                pca_X_Test = pca_1.transform(X_Test)
+            if N == 2:
+                pca_X_Test = pca_2.transform(X_Test)
+            if N == 3:
+                pca_X_Test = pca_3.transform(X_Test)
+            
+            trainScore, testScore = kNNPattern(X_Train, pca_X_Test, Y_Train, Y_Test, k)
+            print("K={}-N={}:{} ,{}".format(k, N, trainScore, testScore))
 
 if __name__ == "__main__":
     main()

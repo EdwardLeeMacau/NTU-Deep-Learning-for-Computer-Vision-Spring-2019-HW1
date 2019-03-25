@@ -3,12 +3,12 @@
   PackageName  [ DLCV_HW1 ]
   Synopsis     [ Problem 3 Solution of the HW1 ]
 
-  Library:
-  * scikit-learn    (version: 0.20.3)
-  * scipy           (version: 1.2.1)
-  * numpy           (version: 1.15.4)
-  * matplotlib      (version: )
-  * cv2             (version: )
+  Problem 3:
+  - read the images and chop as shape=(16*16)
+  - use k-Means clustering to seperate the training set into C-sets
+  - pca to apply the dimension reduction
+  - change the words as C-dimension vector
+  - k-NN detection
 """
 
 import numpy as np
@@ -16,147 +16,213 @@ import cv2
 import os
 import random
 import sklearn
-# from matplotlib import pyplot
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans 
+from mpl_toolkits.mplot3d import Axes3D
 
 # Data import
-categories = os.listdir("p3_data/")
-X_Train = np.array([])
-Y_Train = np.array([])
-X_Test  = np.array([])
-Y_Test  = np.array([])
 numCluster = 15
 maxIteration = 5000
 numNearsetNeighbor = 5
 
+# State setting
+verbose = False
+draw_graph = False
+
+def chopImage(image, stride=16):
+    imageBatchs = []
+
+    for x in [0, 16, 32, 48]:
+        for y in [0, 16, 32, 48]:
+            imageBatchs.append(image[x:x+stride, y:y+stride])
+
+    return imageBatchs
+
 def readImages():
-    for category in categories:
-        directory   = "p3_data/{}".format(category)
-        imageNames  = [ "{}/{}".format(directory, name) for name in os.listdir(directory) ] 
+    # Training sets setting
+    X_Train = []
+    X_Test  = []
+    Y_Train = []
+    Y_Test  = []
 
-        buffer = np.empty((64, 64, 3))
-        for name in imageNames: 
-            buffer = np.append(buffer, cv2.imread(name), axis=0)
+    categories = os.listdir("p3_data")
+    images = {}
 
-        X_Train = np.append(X_Train, buffer[:375], axis=0)
-        X_Test  = np.append(X_Test, buffer[375:], axis=0)
-        
-        if category == "banana":
-            Y_Train = np.append(Y_Train, np.ones(375))
-        elif category == "fountain":
-            Y_Train = np.append(Y_Train, 2 * np.ones(375))
-        elif category == "reef":
-            Y_Train = np.append(Y_Train, 3 * np.ones(375))
-        elif category == "tractor":
-            Y_Train = np.append(Y_Train, 4 * np.ones(375))
+    category_index = 1
+    for number, name in enumerate(categories, 1):  
+        images[name] = []
+        imagesName = os.listdir("p3_data/{}".format(name))
 
-        if category == "banana":
-            Y_Test = np.append(Y_Test, np.ones(125))
-        elif category == "fountain":
-            Y_Test = np.append(Y_Test, 2 * np.ones(125))
-        elif category == "reef":
-            Y_Test = np.append(Y_Test, 3 * np.ones(125))
-        elif category == "tractor":
-            Y_Test = np.append(Y_Test, 4 * np.ones(125))
+        for number in imagesName:
+            image = cv2.imread(os.path.join("p3_data", name, number))
+            images[name].append(image)
 
-    return X_Train, Y_Train, X_Test, Y_Test
-
-def showImageSet():
-    for dataset in [X_Train, Y_Train, X_Test, Y_Test]:
-        print("Shape: {}".format(dataset.shape()))
-
-def randomPickPlot(X_Train, category=4):
-    for i in range(0, 4):
-        randomIndex = random.choices(range(0, 375), k=4)
-
-# Divide the image into patches
-# Flatten the vector
-def image2cols(image, patch_size, stride, flatten=True):
-    if len(image.shape) == 2:   # Grey image
-        imhigh, imwidth = image.shape
-    if len(image.shape) == 3:   # RGB image
-        imhigh, imwidth, imch = image.shape
-
-    range_y = np.arange(0, imhigh - patch_size[0], stride)
-    range_x = np.arange(0, imwidth - patch_size[1], stride)
+        X_Train += images[name][:375]
+        X_Test  += images[name][375:]
+        Y_Train.append(number * np.ones(375))
+        Y_Test.append(number * np.ones(125))
     
-    if range_y[-1] != imhigh - patch_size[0]:
-        range_y = np.append(range_y, imhigh - patch_size[0])
-    if range_x[-1] != imwidth - patch_size[1]:
-        range_x = np.append(range_x, imwidth - patch_size[1])
-    
-    size = len(range_y) * len(range_x)
-    if len(image.shape) == 2:   # Grey image
-        res = np.zeros((size, patch_size[0], patch_size[1]))
-    if len(image.shape) == 3:   # RGB image
-        res = np.zeros((size, patch_size[0], patch_size[1], imch))
-    
-    index = 0
-    for y in range_y:
-        for x in range_x:
-            patch = image[y : y+patch_size[0], x : x+patch_size[1]]
-            res[index] = patch
-            index = index + 1
-    
-    return res 
+        category_index += 1
 
-# Flatten the patches into 1D array
-# X_train_patches, X_test_patches = np.Flatten()
-# Check size (24000, 768), (8000, 768)
+    X_Train = np.array(X_Train)
+    X_Test  = np.array(X_Test)
+    Y_Train = np.array(Y_Train).flatten()
+    Y_Test  = np.array(Y_Test).flatten()
 
-# PCA and plot with matplotlib
-
-# Bag-of-words
-# Soft-max strategy
+    return X_Train, X_Test, Y_Train, Y_Test
 
 def main():
-    images = readImages()
+    # Read raw image
+    X_Train, X_Test, Y_Train, Y_Test = readImages()
+
+    X_Train_patches = []
+    X_Test_patches  = []
+
+    # Make patches
+    for image in X_Train:
+        image_patches = chopImage(image, stride=16)
+        X_Train_patches.append(image_patches)
+
+    for image in X_Test:
+        image_patches = []
+
+        for x in [0, 16, 32, 48]:
+            for y in [0, 16, 32, 48]:
+                image_patches.append(image[x:x+16, y:y+16])
+
+        X_Test_patches.append(image_patches)
+
+    # Change X as numpy element, Y as one hot encoding vector.
+    X_Train_patches = np.array(X_Train_patches).reshape((-1, 16, 16, 3))
+    Y_Train_patches = np.append(np.append(np.ones(6000), 2*np.ones(6000)), np.append(3*np.ones(6000), 4*np.ones(6000))) 
+    X_Test_patches  = np.array(X_Test_patches).reshape((-1, 16, 16, 3))
+    Y_Test_patches  = np.append(np.append(np.ones(2000), 2*np.ones(2000)), np.append(3*np.ones(2000), 4*np.ones(2000)))
     
-    # Images -> image patches
-    for category in images:
-        for key in images[category].keys():
-            values = np.array([])
+    # Plot 3 patch in each image
+    if draw_graph:
+        for i in range(0, 4):
+            pick = random.randint(0, 374)
+            patches = X_Train_patches[ i * 375 * 16 + pick * 16 : i * 375 * 16 + pick * 16 + 16]
+            
+            for patch in patches[0:3]:
+                cv2.imshow("patch", patch)
+                cv2.waitKey(0)
 
-            for value in images[category][key]:
-                value.append(image2cols(value, (16, 16), 16, flatten=False))
+    X_Train_patches = np.array(X_Train_patches).reshape((24000, 768))
+    X_Test_patches  = np.array(X_Test_patches).reshape((8000, 768))
 
-            # Total sets
-            if key == "X_Train":
-                X_Train.append(values)
-            if key == "X_Test":
-                X_Test.append(values)
-
-            # Categories sets
-            images[category][key] = values
-
-    # Flatten the patches into 1D array
-    for patch in X_Train:
-        patch.flatten()
-
-    for patch in X_Test:
-        patch.flatten()
-
-    showImageSet()
+    if verbose:
+        print("X_Train.shape: {}".format(X_Train_patches.shape))
+        print("X_Test.shape:  {}".format(X_Test_patches.shape))
+        print("Y_Train.shape: {}".format(Y_Train_patches.shape))
+        print("Y_Test.shape:  {}".format(Y_Test_patches.shape))
 
     # k-Means Cluster
-    kMeans = sklearn.cluster.KMeans(n_clusters=numCluster)
-    kMeans.fit(X_Train)
+    kMeans = KMeans(n_clusters=15, max_iter=5000)
+    Y_Train_patches_predict = kMeans.fit_predict(X_Train_patches)
+    centroids = kMeans.cluster_centers_
+    labels    = kMeans.labels_
     
-    # PCA
+    # PCA to show the points
     pca = sklearn.decomposition.PCA(n_components=3)
-    pca.fit(X_Train)
-    pca.transform(X_Train)
-    pca.transform(X_Test)
-    print(pca.explained_variance_ratio_)
-    print(pca.singular_values_)
+    X_Train_patches_pca = pca.fit_transform(X_Train_patches)
+    centroids_pca       = pca.transform(centroids)
 
-    # Plot with matplotlib 3D
+    if verbose:
+        print(centroids_pca.shape)
+
+    target_Cluster = random.sample([i for i in range(0, 15)], 6)
+
+    # Plot points
+    fig = plt.figure()
+    axis = fig.add_subplot(111, projection='3d')
+    
+    color_index = 0
+    colors = ['b', 'g', 'r', 'y', 'k', 'c']
+    markers = ["$a$", "$b$", "$c$", "$d$", "$e$", "$f$"]
+    for target_plot in target_Cluster:
+        targets = []
+        
+        for element in range(0, 24000):
+            if labels[element] == target_plot:
+                targets.append(X_Train_patches_pca[element])
+
+        targets = np.array(targets).transpose()
+        # print("Targets.shape: {}".format(targets.shape))
+        axis.scatter(targets[0], targets[1], targets[2], s=0.15, c=colors[color_index], marker=",")
+
+        color_index += 1
+
+    # plot centroids
+    color_index = 0
+    for target_plot in target_Cluster:
+        center = centroids_pca[target_plot]
+        axis.scatter(center[0], center[1], center[2], s=80, c=colors[color_index], marker='s')
+        
+        color_index += 1
+
+    plt.show()
 
     # Bag-of-Words with softmax 
+    BoW = []
+
+    for i in range(0, 1500):
+        image_In_patches = X_Train_patches[16 * i: 16*i + 16]
+
+        normsMatrix = []
+        for patch in image_In_patches:
+            norms = np.array([np.linalg.norm(patch - center) for center in centroids])
+            norms = (1 / norms) / (np.sum(1 / norms))
+            normsMatrix.append(norms)
+        
+        normsMatrix = np.array(normsMatrix).transpose()
+        bow = np.amax(normsMatrix, axis=1)
+
+        BoW.append(bow)
+
+    BoW = np.array(BoW)
+    print("Bow.shape: {}".format(BoW.shape))
+
+
+    # Histogram making
+    j = 0 
+    while j < 4:
+        
+        for i in range(0, 1500):
+            if Y_Train[i] == (j + 1):
+                plt.subplot(2, 2, j + 1)
+                plt.bar(range(0, 15), BoW[i])
+                plt.title("Type {}".format(j + 1))
+                break
+    
+        j += 1
+
+    plt.show()
 
     # K-nearest neighbors
-    neighbor = sklearn.neighbors.KNeighborsClassifier(n_neighbors=3)
-    neighbor.fit(X_Train, Y_Train)
+    BoW_Test = []
 
+    for i in range(0, 500):
+        image_In_patches = X_Test_patches[16 * i: 16*i + 16]
+
+        normsMatrix = []
+        for patch in image_In_patches:
+            norms = np.array([np.linalg.norm(patch - center) for center in centroids])
+            norms = (1 / norms) / (np.sum(1 / norms))
+            normsMatrix.append(norms)
+        
+        normsMatrix = np.array(normsMatrix).transpose()
+        bow = np.amax(normsMatrix, axis=1)
+
+        BoW_Test.append(bow)
+
+    BoW_Test = np.array(BoW_Test)
+    if verbose: print("Bow_Test.shape: {}".format(BoW_Test.shape))
+
+    neighbor = sklearn.neighbors.KNeighborsClassifier(n_neighbors=5)
+    neighbor.fit(BoW, Y_Train)
+    score = neighbor.score(BoW_Test, Y_Test)
+    print("Bag-of-Words testing score: {}".format(score))
 
 if __name__ == "__main__":
     main()
