@@ -4,21 +4,32 @@
   Synopsis     [ Problem 3 Solution of the HW1 ]
 
   Problem 3:
-  - read the images and chop as shape=(16*16)
-  - use k-Means clustering to seperate the training set into C-sets
-  - pca to apply the dimension reduction
-  - change the words as C-dimension vector
-  - k-NN detection
+  Images : color images, with 4 catagories
+  Format : RGB, size=(64, 64), crop as (16, 16), stride is (16, 16)
+
+  Problem 3-1:
+  Use k-Means clustering to seperate the training set into C-sets
+  
+  Problem 3-2:
+  Use PCA to apply the dimension reduction
+  
+  Problem 3-3:
+  Change the visual words as C-dimension vector
+  
+  Problem 3-4:
+  k-NN detection
 """
 
-import numpy as np
-import cv2
 import os
 import random
-import sklearn
+
 import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans 
+import numpy as np
+import sklearn
 from mpl_toolkits.mplot3d import Axes3D
+from sklearn.cluster import KMeans
+
+import cv2
 
 # Data import
 numCluster = 15
@@ -29,17 +40,45 @@ numNearsetNeighbor = 5
 verbose = False
 draw_graph = False
 
-def chopImage(image, stride=16):
-    imageBatchs = []
+def cropImage(image, size=16, stride=16):
+    """
+    crop the images
 
-    for x in [0, 16, 32, 48]:
-        for y in [0, 16, 32, 48]:
-            imageBatchs.append(image[x:x+stride, y:y+stride])
+    Parameters
+    ---------
+    image : np.ndarray
+        The image prepared to crop
 
-    return imageBatchs
+    size : {int, tuple}
+        The size of small images
+
+    stride : {int, tuple}
+        The stride for every cropping
+
+    Return
+    ---------
+    smallimages : list
+    """
+    
+    width, height = image.shape
+
+    smallimages = []
+
+    for x in range(0, width, stride):
+        for y in range(0, height, stride):
+            smallimages.append(image[x:x+size, y:y+size])
+
+    return smallimages
 
 def readImages():
-    # Training sets setting
+    """
+    Preparing the training data and testing data
+
+    Return
+    ---------
+    (X_Train, X_Test, Y_Train, Y_Test) : tuple
+        dataset for problem 3
+    """
     X_Train = []
     X_Test  = []
     Y_Train = []
@@ -47,22 +86,20 @@ def readImages():
 
     categories = os.listdir("p3_data")
     images = {}
-
-    category_index = 1
-    for number, name in enumerate(categories, 1):  
+    
+    for index, name in enumerate(categories, 1):  
         images[name] = []
-        imagesName = os.listdir("p3_data/{}".format(name))
+        imagesName = os.listdir("./p3_data/{}".format(name))
 
         for number in imagesName:
-            image = cv2.imread(os.path.join("p3_data", name, number))
+            image = cv2.imread(os.path.join("./p3_data", name, number))
             images[name].append(image)
 
-        X_Train += images[name][:375]
-        X_Test  += images[name][375:]
-        Y_Train.append(number * np.ones(375))
-        Y_Test.append(number * np.ones(125))
-    
-        category_index += 1
+        X_Train.extend(images[name][:375])
+        X_Test.extend(images[name][375:])
+
+        Y_Train.append(index * np.ones(375))
+        Y_Test.append(index * np.ones(125))
 
     X_Train = np.array(X_Train)
     X_Test  = np.array(X_Test)
@@ -80,23 +117,18 @@ def main():
 
     # Make patches
     for image in X_Train:
-        image_patches = chopImage(image, stride=16)
+        image_patches = cropImage(image, stride=16)
         X_Train_patches.append(image_patches)
 
     for image in X_Test:
-        image_patches = []
-
-        for x in [0, 16, 32, 48]:
-            for y in [0, 16, 32, 48]:
-                image_patches.append(image[x:x+16, y:y+16])
-
+        image_patches = cropImage(image, stride=16)
         X_Test_patches.append(image_patches)
 
     # Change X as numpy element, Y as one hot encoding vector.
     X_Train_patches = np.array(X_Train_patches).reshape((-1, 16, 16, 3))
-    Y_Train_patches = np.append(np.append(np.ones(6000), 2*np.ones(6000)), np.append(3*np.ones(6000), 4*np.ones(6000))) 
+    Y_Train_patches = np.repeat([1, 2, 3, 4], repeats=6000)
     X_Test_patches  = np.array(X_Test_patches).reshape((-1, 16, 16, 3))
-    Y_Test_patches  = np.append(np.append(np.ones(2000), 2*np.ones(2000)), np.append(3*np.ones(2000), 4*np.ones(2000)))
+    Y_Train_patches = np.repeat([1, 2, 3, 4], repeats=6000)
     
     # Plot 3 patch in each image
     if draw_graph:
@@ -128,9 +160,7 @@ def main():
     X_Train_patches_pca = pca.fit_transform(X_Train_patches)
     centroids_pca       = pca.transform(centroids)
 
-    if verbose:
-        print(centroids_pca.shape)
-
+    # Choose 6 clusters to visualize
     target_Cluster = random.sample([i for i in range(0, 15)], 6)
 
     # Plot points
@@ -140,6 +170,7 @@ def main():
     color_index = 0
     colors = ['b', 'g', 'r', 'y', 'k', 'c']
     markers = ["$a$", "$b$", "$c$", "$d$", "$e$", "$f$"]
+
     for target_plot in target_Cluster:
         targets = []
         
@@ -163,7 +194,11 @@ def main():
 
     plt.show()
 
-    # Bag-of-Words with softmax 
+    # ------------------------------------------ #
+    # Problem 3-3:                               #
+    # - Bag-of-Words with softmax normalization  #
+    # - Show the statistics with histogram       #
+    # ------------------------------------------ #
     BoW = []
 
     for i in range(0, 1500):
@@ -183,22 +218,25 @@ def main():
     BoW = np.array(BoW)
     print("Bow.shape: {}".format(BoW.shape))
 
-
-    # Histogram making
+    # Generate a histogram
     j = 0 
     while j < 4:
-        
         for i in range(0, 1500):
             if Y_Train[i] == (j + 1):
                 plt.subplot(2, 2, j + 1)
                 plt.bar(range(0, 15), BoW[i])
                 plt.title("Type {}".format(j + 1))
+                
                 break
     
         j += 1
 
     plt.show()
 
+    # ------------------------------------------ #
+    # Problem 3-4:                               #
+    # - K-nerest neighbors classifier            #
+    # ------------------------------------------ #
     # K-nearest neighbors
     BoW_Test = []
 
@@ -217,8 +255,11 @@ def main():
         BoW_Test.append(bow)
 
     BoW_Test = np.array(BoW_Test)
-    if verbose: print("Bow_Test.shape: {}".format(BoW_Test.shape))
+    
+    if verbose: 
+        print("Bow_Test.shape: {}".format(BoW_Test.shape))
 
+    # K-NN Classifier
     neighbor = sklearn.neighbors.KNeighborsClassifier(n_neighbors=5)
     neighbor.fit(BoW, Y_Train)
     score = neighbor.score(BoW_Test, Y_Test)
